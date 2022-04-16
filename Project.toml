@@ -1,0 +1,4 @@
+name = "MetropolisHastings"
+uuid = "77b4525b-77e9-4be9-a055-d767757e5808"
+authors = ["liviomaya <liviomaya@gmail.com>"]
+version = "0.1.0"
