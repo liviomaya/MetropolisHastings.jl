@@ -87,7 +87,7 @@ function mhsampler(N::Int64,
     B::Int64)
 
     # prelims
-    P = length(x0)
+    P = length(firstdraw)
     @assert P >= B "More blocks than parameters"
     jumpdist = MvNormal(zeros(P), jumpcov)
     blockarray = randomblocks(P, B, N)
@@ -107,7 +107,7 @@ function mhsampler(N::Int64,
             draw[block] .+= jump[block]
             cprior = prior(draw)
             (cprior == -Inf) && continue
-            density = cprior + likelhood(draw)
+            density = cprior + likelihood(draw)
             (density == -Inf) && continue
             acceptprob = min(1, exp(density - statedensity))
             if acceptprob < 1 # avoid costly draw if unnecessary
@@ -116,18 +116,18 @@ function mhsampler(N::Int64,
             statedraw = draw
             statedensity = density
         end
-        drawarray[n, :] = draw
-        densityarray[n] = density
+        drawarray[n, :] = statedraw
+        densityarray[n] = statedensity
         next!(progress)
     end
 
     return drawarray, densityarray
 end
 
-function getmode(guess:Vector{Float64},
+function getmode(guess::Vector{Float64},
     prior::Function,
     likelihood::Function,
-    interations::Int64)
+    iterations::Int64)
 
     # objective function (posterior)
     function objective(x::Vector{Float64})
@@ -160,7 +160,7 @@ function summarytable(sample::VecOrMat{U},
     acceptrate = mapslices(checkaccept, sample, dims=1)[:]
     jumpstd = sqrt.(diag(jumpcov))
     stdpar = std(sample, dims=1)[:]
-    meanpar = mean(sample, dims=1)[:]
+    meanval = mean(sample, dims=1)[:]
     modeval = sample[argmax(density), :]
     quantile5val = mapslices(quantile5, sample, dims=1)[:]
     quantile95val = mapslices(quantile95, sample, dims=1)[:]
@@ -238,11 +238,11 @@ function mhsampler(draw::Vector{Float64},
     # sampler
     println("SIMULATE MAIN SAMPLE")
     jumpcovmain = jumpscale^2 * jumpcov
-    sample, densities = mhsampler(draws, firstdraws, prior,
+    sample, densities = mhsampler(draws, firstdraw, prior,
         likelihood, jumpcovmain, blocks)
 
     sample = sample[burn+1:end, :]
-    densities = densities[burn+1:end, :]
+    densities = densities[burn+1:end]
 
     # re-calculate mode
     modeindex = argmax(densities)
@@ -276,7 +276,7 @@ function mhsampler(draw::Float64,
     options::MHOptions=MHOptions())
 
     prmat = p -> prior(p[1])
-    lhmat = p -> likelihood(p[1])
+    lkmat = p -> likelihood(p[1])
 
     results = mhsampler([draw], prmat, lkmat, options=options)
     return results
