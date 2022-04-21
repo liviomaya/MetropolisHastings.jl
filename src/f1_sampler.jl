@@ -225,12 +225,14 @@ function mhsampler(draw::Vector{Float64},
         trainingsample, trainingdensities = mhsampler(drawstraining,
             firstdraw, prior, likelihood, jumpcov, N)
 
+        trainingsample = trainingsample[burntraining+1:end, :]
+        trainingdensities = trainingdensities[burntraining+1:end]
+
         summarytable(trainingsample, trainingdensities, jumpcov)
         acceptrate(trainingsample, N)
         println(" ")
         println(" ")
 
-        trainingsample = trainingsample[burntraining+1:end, :]
         jumpcov = cov(trainingsample)
         firstdraw = trainingsample[end, :]
     end
