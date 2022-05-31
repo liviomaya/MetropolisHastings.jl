@@ -25,7 +25,7 @@ the jumping distribution.
     calcmodeiter::Int64 = 100
     calcmarginal::Bool = true
     training::Bool = true
-    drawstraining::Int64 = 100
+    drawstraining::Int64 = 200
     burntraining::Int64 = 100
     draws::Int64 = 200
     burn::Int64 = 100
@@ -70,11 +70,11 @@ function randomblocks(p::Int64, B::Int64)
     return blocks
 end
 
-function randomblocks(p::Int64, B::Int64, N::Int64)
-    blocks = Vector{Vector{Float64}}(undef, N)
-    blocks = [randomblocks(p, B) for _ in 1:N]
-    return blocks
-end
+# function randomblocks(p::Int64, B::Int64, N::Int64)
+#     blocks = Vector{Vector{Float64}}(undef, N)
+#     blocks = [randomblocks(p, B) for _ in 1:N]
+#     return blocks
+# end
 
 randomblocks(p::Int64, B::Int64, N::Int64) = [randomblocks(p, B) for _ in 1:N]
 
@@ -221,7 +221,7 @@ function mhsampler(draw::Vector{Float64},
     # training sample 
     if training
         @unpack drawstraining, burntraining = options
-        println("SIMULATE TRAINING SAMPLE")
+        println("SIMULATE TRAINING SAMPLE!")
         trainingsample, trainingdensities = mhsampler(drawstraining,
             firstdraw, prior, likelihood, jumpcov, N)
 

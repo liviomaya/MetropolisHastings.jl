@@ -51,8 +51,8 @@ function acceptrate(X::Matrix{Float64}, B::Int64=1)
     end
     drawrate = naccept / (N - 1)
     blockrate = 1 - (1 - drawrate)^(1 / B)
-    println("Acceptance rate (draw level) : $(round(100*drawrate, digits=1))")
-    println("Acceptance rate (block level) : $(round(100*blockrate, digits=1))")
+    println("Acceptance rate (draw level) : $(round(100*drawrate, digits=1))%")
+    println("Acceptance rate (block level) : $(round(100*blockrate, digits=1))%")
     return drawrate, blockrate
 end
 acceptrate(X::Vector{Float64}, B::Int64=1) = acceptrate(X * ones(1, 1), B)
