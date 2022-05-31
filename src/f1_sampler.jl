@@ -221,7 +221,7 @@ function mhsampler(draw::Vector{Float64},
     # training sample 
     if training
         @unpack drawstraining, burntraining = options
-        println("SIMULATE TRAINING SAMPLE!")
+        println("SIMULATE TRAINING SAMPLE")
         trainingsample, trainingdensities = mhsampler(drawstraining,
             firstdraw, prior, likelihood, jumpcov, N)
 
