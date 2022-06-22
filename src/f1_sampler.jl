@@ -27,6 +27,7 @@ the jumping distribution.
     training::Bool = true
     drawstraining::Int64 = 200
     burntraining::Int64 = 100
+    blockstraining::Int64 = 1
     draws::Int64 = 200
     burn::Int64 = 100
     blocks::Int64 = 1
@@ -220,11 +221,11 @@ function mhsampler(draw::Vector{Float64},
 
     # training sample 
     if training
-        @unpack drawstraining, burntraining = options
+        @unpack drawstraining, burntraining, blockstraining = options
         println("SIMULATE TRAINING SAMPLE")
         trainingsample, trainingdensities = mhsampler(
             drawstraining + burntraining, firstdraw, prior,
-            likelihood, jumpcov, N)
+            likelihood, jumpcov, blockstraining)
 
         trainingsample = trainingsample[burntraining+1:end, :]
         trainingdensities = trainingdensities[burntraining+1:end]
