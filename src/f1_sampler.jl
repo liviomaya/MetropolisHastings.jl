@@ -5,8 +5,9 @@
     calcmodeiter::Int64 = 100
     calcmarginal::Bool = true
     training::Bool = true
-    drawstraining::Int64 = 100
+    drawstraining::Int64 = 200
     burntraining::Int64 = 100
+    blockstraining::Int64 = 1
     draws::Int64 = 200
     burn::Int64 = 100
     blocks::Int64 = 1
