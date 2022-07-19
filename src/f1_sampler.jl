@@ -223,6 +223,7 @@ function mhsampler(draw::Vector{Float64},
     # training sample 
     if training
         @unpack drawstraining, burntraining, blockstraining = options
+        println("")
         println("SIMULATE TRAINING SAMPLE")
         trainingsample, trainingdensities = mhsampler(
             drawstraining + burntraining, firstdraw, prior,
@@ -241,6 +242,7 @@ function mhsampler(draw::Vector{Float64},
     end
 
     # sampler
+    println("")
     println("SIMULATE MAIN SAMPLE")
     jumpcovmain = jumpscale^2 * jumpcov
     sample, densities = mhsampler(draws + burn, firstdraw, prior,
