@@ -1,5 +1,5 @@
 using DataFrames, Distributions
 using LinearAlgebra
-using Optim
+using Markdown
 using Parameters, PrettyTables, ProgressMeter
-using SpecialFunctions
+using SpecialFunctions, Statistics

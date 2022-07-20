@@ -1,61 +1,67 @@
 
 
 """
-    MHOptions(calcmode::Bool = false
-    calcmodeiter::Int64 = 100
-    calcmarginal::Bool = true
-    training::Bool = true
-    drawstraining::Int64 = 200
-    burntraining::Int64 = 100
-    blockstraining::Int64 = 1
-    draws::Int64 = 200
-    burn::Int64 = 100
-    blocks::Int64 = 1
-    jumpstd::Float64 = 1.0
-    jumpscale::Float64 = 1.0
-    geweketau::Float64 = 0.025)
+    MHOptions(N, Σ, B, γ, burn)
 
-Constructor with options for Metropolis-Hastings algorithm. Set `calcmode=true`
-to maximize the kernel (`likelihood` times `prior`) prior to simulation. Set
-`training=true` to simulate a training sample used to infer a covariance matrix
-for the jumping process. Parameter `jumpscale` scales the covariance matrix of
-the jumping distribution.
+Constructor with keywords (see `Parameters` package). `MHOptions` groups parameters of the `mhsampler` function.
+
+### Fields
+
+- `N::Int64=100`: Size of the Monte-Carlo simulation.
+
+- `Σ::Matrix{Float64}=[1.0]`: Covariance matrix of the Gaussian proposal distribution.
+
+- `B::Int64=1`: Number of parameter blocks per draw (blocks assigned randomly in each iteration).
+
+- `γ::Float64=0.01`: Stepsize for calculation of expected acceptance rate `α`: `α(n+1) = α(n) + γ [AR(n) -  α(n)]`, where `AR(n)` is the acceptance rate of draw `t`.
+
+- `burn::Int64=0`: Number of draws discarded at the end of the sampling procedure.
 """
 @with_kw struct MHOptions
-    calcmode::Bool = false
-    calcmodeiter::Int64 = 100
-    calcmarginal::Bool = true
-    training::Bool = true
-    drawstraining::Int64 = 200
-    burntraining::Int64 = 100
-    blockstraining::Int64 = 1
-    draws::Int64 = 200
-    burn::Int64 = 100
-    blocks::Int64 = 1
-    jumpstd::Float64 = 1.0
-    jumpscale::Float64 = 1.0
-    geweketau::Float64 = 0.025
+    N::Int64 = 100
+    Σ::Matrix{Float64} = diagm(0 => [1])
+    B::Int64 = 1
+    γ::Float64 = 0.01
+    burn::Int64 = 0
 end
 
-
-
 """
-    MHResults(mode::Vector{Float64}
-        sample::Matrix{Float64}
-        densitykernel::Vector{Float64}
-        marginal::Float64
-        acceptrate::Float64
-        acceptrateblock::Float64)
+    MHResults(algorithm, sample, density, mode, N, B, Σ, γ, α)
 
+Constructor with results from Metropolis-Hastings algorithm (`mhsampler` function).
+
+### Fields
+
+- `algorithm::String`: name of the algorithm.
+
+- `sample::Matrix{Float64}`: simulated sample, with observation in the first dimension.
+
+- `density::Vector{Float64}`: density evaluated at the corresponding point in `sample`.
+
+- `mode::Vector{Float64}`: mode (draw with largest density).
+
+- `N::Int64`: Size of the sample after burning.
+
+- `B::Int64`: Number of blocks in the sampler.
+
+- `Σ::Matrix{Float64}:` covariance matrix of the proposal Gaussian distribution.
+
+- `γ::Float64=0.01`: Stepsize for calculation of expected acceptance rate `α`: `α(n+1) = α(n) + γ [AR(n) -  α(n)]`, where `AR(n)` is the acceptance rate of draw `t`.
+
+- `α::Vector{Float64}`: expected acceptance rate.
 """
 struct MHResults
-    mode::Vector{Float64}
+    algorithm::String
     sample::Matrix{Float64}
-    densitykernel::Vector{Float64}
-    marginal::Float64
-    acceptrate::Float64
-    acceptrateblock::Float64
+    density::Vector{Float64}
+    mode::Vector{Float64}
+    N::Int64
+    B::Int64
+    Σ::Matrix{Float64}
+    γ::Float64
+    α::Vector{Float64}
 end
+
 
 function randomblocks(p::Int64, B::Int64)
     # p : number of elements to be sorted
@@ -80,79 +86,171 @@ end
 
 randomblocks(p::Int64, B::Int64, N::Int64) = [randomblocks(p, B) for _ in 1:N]
 
+"""
+    R = mhsampler(f, x0, opt)
 
-function mhsampler(N::Int64,
-    firstdraw::Vector{Float64},
-    prior::Function,
-    likelihood::Function,
-    jumpcov::Matrix{Float64},
-    B::Int64)
+Simulate from density `f` using the Metropolis-Hastings algorithm.
+
+### Arguments
+
+- `f::Function`: Log-density used in the simulation.
+
+- `x0::Vector{Float64}`: Initial condition of the chain.
+
+- `opt::MHOptions`: Constructor with parameters that govern the sampler.
+
+### Output
+
+- `R::MHResults`: Constructor with results of the sampler.
+
+"""
+function mhsampler(f::Function, x0::Vector{Float64}, opt::MHOptions)
+
+    @unpack N, Σ, B, γ, burn = opt
+
+    # check size consistency
+    P = length(x0)
+    @assert P >= B "More blocks than parameters"
 
     # prelims
-    P = length(firstdraw)
-    @assert P >= B "More blocks than parameters"
-    jumpdist = MvNormal(zeros(P), jumpcov)
+    Gaussian = MvNormal(diagm(0 => ones(P)))
+    sqΣ = collect(cholesky(Σ).L)
     blockarray = randomblocks(P, B, N)
 
-    # initialize output
-    drawarray = zeros(N, P)
-    densityarray = zeros(N)
+    # pre-allocate output
+    sample = zeros(N, P)
+    density = zeros(N)
+    α = zeros(N)
 
     # simulation
-    statedraw = firstdraw
-    statedensity = prior(firstdraw) + likelihood(firstdraw)
-    progress = Progress(N, dt=1, barlen=25)
+    x = x0
+    d = f(x)
+    α_n = 0.0
+    display(md"**Metropolis-Hastings (MH) Sampler**")
+    progress = Progress(N, dt=1.0, barlen=25)
     for n in 1:N
-        jump = rand(jumpdist)
+        # draw candidate
+        jump = sqΣ * rand(Gaussian)
+
+        # evaluate block by block
+        acceptrate = 0.0
         for block in blockarray[n]
-            draw = copy(statedraw)
-            draw[block] .+= jump[block]
-            cprior = prior(draw)
-            (cprior == -Inf) && continue
-            density = cprior + likelihood(draw)
-            (density == -Inf) && continue
-            acceptprob = min(1, exp(density - statedensity))
-            if acceptprob < 1 # avoid costly draw if unnecessary
-                (rand() > acceptprob) && continue
+            xc = copy(x)
+            xc[block] .+= jump[block]
+            dc = f(xc)
+            acceptrate_b = min(1, exp(dc - d))
+            if rand() < acceptrate_b
+                x = xc
+                d = dc
             end
-            statedraw = draw
-            statedensity = density
+            acceptrate += acceptrate_b / B
         end
-        drawarray[n, :] = statedraw
-        densityarray[n] = statedensity
-        next!(progress)
-    end
+        sample[n, :] = x
+        density[n] = d
 
-    return drawarray, densityarray
+        # update expected acceptance rate
+        if n < N
+            α_n = α_n + γ * (acceptrate - α_n)
+            α[n+1] = α_n
+        end
+        next!(progress,
+            showvalues=[(:LogDensity, d), (:Expec_Acceptance, α_n)])
+    end
+    println("")
+    println("")
+
+    # build results
+    algorithm = "Metropolis Hastings"
+    sample = sample[burn+1:end, :]
+    density = density[burn+1:end]
+    α = α[burn+1:end]
+    mode = sample[argmax(density), :]
+    R = MHResults(algorithm, sample, density, mode, N - burn, B, Σ, γ, α)
+
+    return R
 end
 
-function getmode(guess::Vector{Float64},
-    prior::Function,
-    likelihood::Function,
-    iterations::Int64)
 
-    # objective function (posterior)
-    function objective(x::Vector{Float64})
-        cprior = prior(x)
-        (cprior == -Inf) && return Inf
-        obj = -(cprior + likelihood(x))
-        return obj
-    end
 
-    println("Numerical approximation of posterior mode...")
-    R = optimize(objective, guess, BFGS(),
-        Optim.Options(iterations=iterations,
-            show_trace=true,
-            show_every=100))
-    !Optim.converged(R) && println("Search for posterior mode interrupted.")
-    mymode::Vector{Float64} = R.minimizer
+"""
+    S2MHOptions(N0, N1, λ, Σ, B, γ, burn0, burn1)
 
-    return mymode
+Constructor with keywords (see `Parameters` package). `S2MHOptions` groups parameters of the `s2mhsampler` function.
+
+### Fields
+
+- `N0::Int64=100`: Size of the Monte-Carlo simulation in the first step.
+
+- `N1::Int64=100`: Size of the Monte-Carlo simulation in the second step.
+
+- `λ::Float64=1.0`: Global scaling parameter for the second step. The covariance of the proposal distribution in the second step is `λ (Ψ + ϵ)` where `Ψ` is the covariance matrix of the first-step, and `ϵ` is a small diagonal matrix that ensures it is positive semi-definite. 
+
+- `Σ::Matrix{Float64}=[1.0]`: Covariance matrix of the Gaussian proposal distribution for the first-step simulation.
+
+- `B::Int64=1`: Number of parameter blocks per draw (blocks assigned randomly in each iteration).
+
+- `γ::Float64=0.01`: Stepsize for calculation of expected acceptance rate `α`: `α(n+1) = α(n) + γ [AR(n) -  α(n)]`, where `AR(n)` is the acceptance rate of draw `t`.
+
+- `burn0::Int64=0`: Number of draws discarded at the end of the sampling procedure in the first step.
+
+- `burn1::Int64=0`: Number of draws discarded at the end of the sampling procedure in the second step.
+"""
+@with_kw struct S2MHOptions
+    N0::Int64 = 100
+    N1::Int64 = 100
+    λ::Float64 = 1.0
+    Σ::Matrix{Float64} = diagm(0 => [1])
+    B::Int64 = 1
+    γ::Float64 = 0.01
+    burn0::Int64 = 0
+    burn1::Int64 = 0
 end
 
-function summarytable(sample::VecOrMat{U},
+
+"""
+    r, R = s2mhsampler(f, x0, opt)
+
+Simulate from density `f` using the two-step Metropolis-Hastings algorithm.
+
+### Arguments
+
+- `f::Function`: Log-density used in the simulation.
+
+- `x0::Vector{Float64}`: Initial condition of the chain.
+
+- `opt::S2MHOptions`: Constructor with parameters that govern the sampler.
+
+### Output
+
+- `r::MHResults`: Constructor with results of the sampler in the first step.
+
+- `R::MHResults`: Constructor with results of the sampler in the second step.
+
+"""
+function s2mhsampler(f::Function, x0::Vector{Float64}, opt::S2MHOptions)
+
+    @unpack N0, N1, λ, Σ, B, γ, burn0, burn1 = opt
+    @assert N0 > 0 "N0 must be non-zero."
+
+    # step 1: training sample
+    opt_step1 = MHOptions(N=N0, Σ=Σ, B=B, γ=γ, burn=burn0)
+    display(md"**Training Sample**")
+    r0 = mhsampler(f, x0, opt_step1)
+
+    # step 2: main sample
+    P = length(x0)
+    x0_step2 = r0.mode
+    Σ_step2 = λ * (cov(r0.sample, dims=1) + diagm(0 => 0.00001 * ones(P)))
+    opt_step2 = MHOptions(N=N1, Σ=Σ_step2, B=B, γ=γ, burn=burn1)
+    display(md"**Main Sample**")
+    r1 = mhsampler(f, x0_step2, opt_step2)
+
+    return r0, r1
+end
+
+function summarytable(sample::Matrix{Float64},
     density::Vector{Float64},
-    jumpcov::VecOrMat{H}) where {U<:Real,H<:Real}
+    jumpcov::Matrix{Float64})
 
     T, N = size(sample)
     checkaccept(col) = 100 * count(col[2:end] .!= col[1:end-1]) / (T - 1)
@@ -185,106 +283,14 @@ function summarytable(sample::VecOrMat{U},
             "Mode",
             "Mean",
             "St Dev",
-            "5%-Quantile",
-            "95%-Quantile"],
-        formatters=ft_printf("%5.1f", 2:8),
+            "q5%",
+            "q95%"],
+        formatters=ft_printf("%5.2f", 2:8),
         vlines=[3],
         crop=:none)
 
 
-    nothing
+    return nothing
 end
 
-
-function mhsampler(draw::Vector{Float64},
-    prior::Function,
-    likelihood::Function;
-    options::MHOptions=MHOptions())
-
-    @unpack calcmode, training, draws, burn,
-    blocks, jumpstd, jumpscale, calcmarginal,
-    calcmodeiter = options
-
-    # calculate mode
-    mmode = Vector{Float64}(undef, 0)
-    if calcmode
-        mmode = getmode(draw, prior, likelihood, calcmodeiter)
-        firstdraw = mmode
-        println(" ")
-        println(" ")
-    else
-        firstdraw = draw
-    end
-
-    # initial covariance matrix of jumping distribution
-    N = length(draw)
-    jumpcov = jumpstd^2 * collect(I(N))
-
-    # training sample 
-    if training
-        @unpack drawstraining, burntraining, blockstraining = options
-        println("")
-        println("SIMULATE TRAINING SAMPLE")
-        trainingsample, trainingdensities = mhsampler(
-            drawstraining + burntraining, firstdraw, prior,
-            likelihood, jumpcov, blockstraining)
-
-        trainingsample = trainingsample[burntraining+1:end, :]
-        trainingdensities = trainingdensities[burntraining+1:end]
-
-        summarytable(trainingsample, trainingdensities, jumpcov)
-        acceptrate(trainingsample, N)
-        println(" ")
-        println(" ")
-
-        jumpcov = cov(trainingsample)
-        firstdraw = trainingsample[end, :]
-    end
-
-    # sampler
-    println("")
-    println("SIMULATE MAIN SAMPLE")
-    jumpcovmain = jumpscale^2 * jumpcov
-    sample, densities = mhsampler(draws + burn, firstdraw, prior,
-        likelihood, jumpcovmain, blocks)
-
-    sample = sample[burn+1:end, :]
-    densities = densities[burn+1:end]
-
-    # re-calculate mode
-    modeindex = argmax(densities)
-    mmode = sample[modeindex, :]
-
-    # summary table and acceptance rate
-    summarytable(sample, densities, jumpcovmain)
-    acceptratedraw, acceptrateblock = acceptrate(sample, blocks)
-
-    # calculate marginal 
-    if calcmarginal
-        @unpack geweketau = options
-        gewfunc = geweke(sample, geweketau)
-        marg = marginal(sample, densities, gewfunc)
-    else
-        marg = NaN
-    end
-    println(" ")
-    println(" ")
-
-    # build MHResults
-    results = MHResults(mmode, sample, densities, marg,
-        acceptratedraw, acceptrateblock)
-
-    return results
-end
-
-function mhsampler(draw::Float64,
-    prior::Function,
-    likelihood::Function;
-    options::MHOptions=MHOptions())
-
-    prmat = p -> prior(p[1])
-    lkmat = p -> likelihood(p[1])
-
-    results = mhsampler([draw], prmat, lkmat, options=options)
-    return results
-end
+summarytable(R::MHResults) = summarytable(R.sample, R.density, R.Σ)
