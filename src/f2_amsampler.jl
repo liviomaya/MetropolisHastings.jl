@@ -10,6 +10,7 @@ struct AMResults
     μ::Matrix{Float64}
     Σ::Array{Float64,3}
 end
+# TODO: Write documentation for amsampler function and related objects
 
 @with_kw struct AMOptions
     N::Int64
