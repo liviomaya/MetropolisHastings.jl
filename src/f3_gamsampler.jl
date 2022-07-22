@@ -135,13 +135,13 @@ function gamsampler(f::Function, x0::Vector{Float64}, opt::GAMOptions;
 
             # parameter updated only if corresponding algorithm was selected:
             if a == 1
-                λ_n[a][1] = λ_n[a][1] + γ_n * (acceptrate - ᾱ)
+                λ_n[a][1] = max(1e-8, λ_n[a][1] + γ_n * (acceptrate - ᾱ))
                 α_n[a][1] = α_n[a][1] + γ_n * (acceptrate - α_n[a][1])
             elseif a == 2
-                λ_n[a][p2] = λ_n[a][p2] + γ_n * (acceptrate - ᾱ)
+                λ_n[a][p2] = max(1e-8, λ_n[a][p2] + γ_n * (acceptrate - ᾱ))
                 α_n[a][p2] = α_n[a][p2] + γ_n * (acceptrate - α_n[a][p2])
             elseif a == 3
-                λ_n[a][k3] = λ_n[a][k3] + γ_n * (acceptrate - ᾱ)
+                λ_n[a][k3] = max(1e-8, λ_n[a][k3] + γ_n * (acceptrate - ᾱ))
                 α_n[a][k3] = α_n[a][k3] + γ_n * (acceptrate - α_n[a][k3])
             end
 
@@ -182,8 +182,8 @@ function gamsampler(f::Function, x0::Vector{Float64}, opt::GAMOptions;
             showvalues=[
                 ("Log Density", d),
                 ("Acceptance Rate (Global)", α_n[1][1]),
-                [("Acceptance Rate (Pr Comp = $k)", α_n[3][k]) for k in 1:PC]...,
-                [("Acceptance Rate (p = $p)", α_n[2][p]) for p in 1:P]...
+                [("Acceptance Rate (Pr Comp = $k)", α_n[3][k]) for k in 1:min(PC, 5)]...,
+                [("Acceptance Rate (p = $p)", α_n[2][p]) for p in 1:min(P, 10)]...
             ])
 
     end
