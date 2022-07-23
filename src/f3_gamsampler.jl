@@ -151,8 +151,9 @@ function gamsampler(f::Function, x0::Vector{Float64}, opt::GAMOptions;
                 sqsig = copy(sqΣ_n[a])
 
                 if U[a] > 0
-                    updapprox!(mu, U[a] * γ_n, x)
-                    updateΣ!(sqsig, mu, U[a] * γ_n, x)
+                    algoselectrate = U[a] * [1.0; (1 / P); (1 / PC)][a]
+                    updapprox!(mu, algoselectrate * γ_n, x)
+                    updateΣ!(sqsig, mu, algoselectrate * γ_n, x)
                 end
                 μ_n[a] = mu
                 sqΣ_n[a] = sqsig
